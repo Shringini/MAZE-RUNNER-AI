@@ -1,1 +1,2 @@
-pygame
+# Desktop dependency (installed locally)
+# pygame
