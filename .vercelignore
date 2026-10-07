@@ -1,0 +1,10 @@
+requirements.txt
+*.py
+**/*.py
+.venv
+.vscode
+game/
+ai/
+ui/
+tests/
+docs/
