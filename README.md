@@ -89,3 +89,39 @@ MAZE-RUNNER-AI/
 The web version is ready to be hosted on **Netlify**, **Vercel**, or **GitHub Pages**:
 - **Netlify**: Configured via `netlify.toml` for automatic static publishing.
 - **GitHub Pages**: Go to **Repository Settings -> Pages** and select `main` branch to deploy.
+
+---
+
+## How the AI Enemy Works
+
+The enemy is controlled using a Breadth-First Search (BFS) pathfinding algorithm.
+
+The AI follows these steps:
+
+1. The enemy identifies its current position in the maze.
+2. The player's current grid position is obtained.
+3. The maze provides the walkable neighbouring cells.
+4. BFS searches the maze from the enemy position toward the player.
+5. The algorithm calculates a shortest valid path.
+6. The enemy follows the calculated path.
+7. The path is recalculated as the player moves.
+8. The process continues until the enemy catches the player or the game ends.
+
+### AI Flow
+
+```text
+Player Position
+       ↓
+Enemy Detects Player
+       ↓
+Convert Position to Grid
+       ↓
+BFS Pathfinding
+       ↓
+Find Shortest Valid Path
+       ↓
+Enemy Moves Along Path
+       ↓
+Player Moves
+       ↓
+Recalculate Path
