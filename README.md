@@ -4,7 +4,7 @@ A dynamic maze game where the player must navigate through obstacles to reach th
 
 ---
 
-## 🎮 Features
+##  Features
 
 - **Real-Time BFS AI Pathfinding**: The enemy calculates the optimal path through the maze to pursue the player.
 - **Smooth Movement & Collision Detection**: Responsive player controls with auto-alignment corner-nudging to prevent snagging on walls.
@@ -16,7 +16,7 @@ A dynamic maze game where the player must navigate through obstacles to reach th
 
 ---
 
-## 🚀 How to Run the Project
+## How to Run the Project
 
 ### Option 1: Web Version (Browser - Easiest)
 
@@ -53,7 +53,7 @@ To run the desktop Pygame version:
 
 ---
 
-## 🕹️ Controls
+##  Controls
 
 | Action | Keyboard | Touch / Mobile |
 | :--- | :--- | :--- |
@@ -65,7 +65,7 @@ To run the desktop Pygame version:
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 MAZE-RUNNER-AI/
@@ -84,7 +84,7 @@ MAZE-RUNNER-AI/
 
 ---
 
-## 🌐 Deployment
+##  Deployment
 
 The web version is ready to be hosted on **Netlify**, **Vercel**, or **GitHub Pages**:
 - **Netlify**: Configured via `netlify.toml` for automatic static publishing.
