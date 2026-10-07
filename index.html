@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Shadow Protocol: Escape the AI</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f172a;color:#f8fafc;font-family:Arial,sans-serif;display:flex;justify-content:center;min-height:100vh}
+  .wrap{width:min(100%,900px);padding:18px}
+  header{background:#18202f;border:1px solid #334155;border-radius:12px 12px 0 0;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  h1{margin:0;color:#38bdf8;font-size:25px}
+  .controls{color:#94a3b8;font-size:13px;text-align:right}
+  canvas{display:block;width:100%;height:auto;background:#0f172a;border:1px solid #334155;border-top:0;border-radius:0 0 12px 12px}
+  .help{margin-top:10px;color:#94a3b8;text-align:center;font-size:13px}
+  button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  #modal{position:fixed;inset:0;background:rgba(15,23,42,.78);display:none;align-items:center;justify-content:center;padding:20px}
+  .box{width:min(440px,92vw);background:#1e293b;border:3px solid #10b981;border-radius:14px;text-align:center;padding:34px 24px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .box.over{border-color:#ef4444}
+  .box h2{font-size:42px;margin:0 0 18px;color:#10b981}
+  .box.over h2{color:#ef4444}
+  .box p{color:#f8fafc;margin:10px 0 22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>MAZE RUNNER</h1>
+    <div class="controls">Move: WASD / Arrow Keys &nbsp;|&nbsp; Restart: R</div>
+  </header>
+  <canvas id="game" width="820" height="700" tabindex="0"></canvas>
+  <div class="help">Reach the green exit before the red AI enemy catches you.</div>
+</div>
+
+<div id="modal">
+  <div id="modalBox" class="box">
+    <h2 id="modalTitle">YOU WIN!</h2>
+    <p id="modalText"></p>
+    <button onclick="restart()">PLAY AGAIN (R)</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* Browser version based on the submitted Python/Pygame game:
+   15x21 maze, player at P, exit at E, BFS-controlled enemy,
+   WASD/arrow movement, collision, win/lose and restart.
+*/
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const W=820,H=700,HEADER=65,CELL=38;
+const mazeText=[
+"#####################",
+"#P0000#000#000000000#",
+"#0#0#0#0#0#0####0##0#",
+"#000000000#000#00000#",
+"#0#0#0#0#0###000#0#0#",
+"#000#000#00000#000#0#",
+"#0####0##0#0#0#0#0#0#",
+"#0000000#000#0000000#",
+"#0#0#0#0#0###0###0#0#",
+"#0#000#00000#0#00000#",
+"#000#####0###0#0#0#0#",
+"#0#0#0000000#000#0#0#",
+"#000#0##0##0###0###0#",
+"#0#0000000000000000E#",
+"#####################"
+];
+const grid=mazeText.map(r=>r.split(""));
+const rows=grid.length, cols=grid[0].length;
+const offsetX=Math.floor((W-cols*CELL)/2);
+const offsetY=HEADER+Math.floor((H-HEADER-rows*CELL)/2);
+
+let start, exitPos;
+for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+  if(grid[r][c]==="P") start=[r,c];
+  if(grid[r][c]==="E") exitPos=[r,c];
+}
+
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(["arrowup","arrowdown","arrowleft","arrowright","w","a","s","d","r"," "].includes(e.key.toLowerCase())) e.preventDefault();
+  if(e.key.toLowerCase()==="r") restart();
+  canvas.focus();
+});
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+canvas.addEventListener("click",()=>canvas.focus());
+
+const player={
+  size:26,speed:3.6,x:0,y:0,fx:1,fy:0,
+  reset(){this.x=offsetX+start[1]*CELL+(CELL-this.size)/2;this.y=offsetY+start[0]*CELL+(CELL-this.size)/2;}
+};
+const enemy={
+  size:24,speed:2,x:0,y:0,fx:1,fy:0,path:[],target:null,repath:0,
+  reset(){this.x=offsetX+exitPos[1]*CELL+(CELL-this.size)/2;this.y=offsetY+exitPos[0]*CELL+(CELL-this.size)/2;this.target=null;this.path=[];this.repath=0;}
+};
+let won=false,over=false,last=performance.now(),exitPulse=0;
+
+function walkable(r,c){return r>=0&&r<rows&&c>=0&&c<cols&&grid[r][c]!=="#";}
+function center(r,c){return [offsetX+c*CELL+CELL/2,offsetY+r*CELL+CELL/2];}
+function gridPos(x,y){return [Math.floor((y+player.size/2-offsetY)/CELL),Math.floor((x+player.size/2-offsetX)/CELL)];}
+function rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+function walls(){
+  const out=[];
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)if(grid[r][c]==="#")
+    out.push({x:offsetX+c*CELL,y:offsetY+r*CELL,w:CELL,h:CELL});
+  return out;
+}
+const wallRects=walls();
+
+function movePlayer(){
+  let dx=0,dy=0;
+  if(keys["arrowleft"]||keys["a"])dx--;
+  if(keys["arrowright"]||keys["d"])dx++;
+  if(keys["arrowup"]||keys["w"])dy--;
+  if(keys["arrowdown"]||keys["s"])dy++;
+  if(dx&&dy){dx*=Math.SQRT1_2;dy*=Math.SQRT1_2;}
+  if(dx||dy){if(Math.abs(dx)>=Math.abs(dy)){player.fx=dx>0?1:-1;player.fy=0}else{player.fx=0;player.fy=dy>0?1:-1;}}
+  moveAxis(player,dx*player.speed,0);
+  moveAxis(player,0,dy*player.speed);
+}
+function moveAxis(o,dx,dy){
+  o.x+=dx;o.y+=dy;
+  const rr={x:o.x,y:o.y,w:o.size,h:o.size};
+  for(const w of wallRects)if(rectsOverlap(rr,w)){
+    if(dx>0)o.x=w.x-o.size;
+    if(dx<0)o.x=w.x+w.w;
+    if(dy>0)o.y=w.y-o.size;
+    if(dy<0)o.y=w.y+w.h;
+    rr.x=o.x;rr.y=o.y;
+  }
+  o.x=Math.max(offsetX,Math.min(offsetX+cols*CELL-o.size,o.x));
+  o.y=Math.max(offsetY,Math.min(offsetY+rows*CELL-o.size,o.y));
+}
+
+/* BFS: same shortest-path idea as ai/bfs.py */
+function bfs(s,g){
+  if(s[0]===g[0]&&s[1]===g[1])return [s];
+  const q=[s], head=0, seen=new Set([s.join(",")]), parent=new Map();
+  const ds=[[-1,0],[1,0],[0,-1],[0,1]];
+  while(head<q.length){
+    const cur=q[head++];
+    if(cur[0]===g[0]&&cur[1]===g[1])break;
+    for(const [dr,dc] of ds){
+      const nr=cur[0]+dr,nc=cur[1]+dc,key=nr+","+nc;
+      if(!walkable(nr,nc)||seen.has(key))continue;
+      seen.add(key);parent.set(key,cur);q.push([nr,nc]);
+    }
+  }
+  const goalKey=g.join(",");
+  if(!seen.has(goalKey))return [];
+  const path=[];let cur=g;
+  while(cur){path.push(cur);cur=parent.get(cur.join(","))||null;}
+  return path.reverse();
+}
+function enemyGrid(){
+  return [
+    Math.max(0,Math.min(rows-1,Math.floor((enemy.y+enemy.size/2-offsetY)/CELL))),
+    Math.max(0,Math.min(cols-1,Math.floor((enemy.x+enemy.size/2-offsetX)/CELL)))
+  ];
+}
+function updateEnemy(){
+  const pg=gridPos(player.x,player.y);
+  enemy.repath--;
+  if(enemy.target===null||enemy.repath<=0){
+    const path=bfs(enemyGrid(),pg);
+    enemy.path=path.slice(1);
+    enemy.target=enemy.path.length?enemy.path[0]:null;
+    enemy.repath=12;
+  }
+  if(!enemy.target)return;
+  const [tx,ty]=center(enemy.target[0],enemy.target[1]);
+  const ex=enemy.x+enemy.size/2,ey=enemy.y+enemy.size/2;
+  let dx=tx-ex,dy=ty-ey,d=Math.hypot(dx,dy);
+  if(d<=enemy.speed){
+    enemy.x=tx-enemy.size/2;enemy.y=ty-enemy.size/2;
+    enemy.path.shift();enemy.target=enemy.path.length?enemy.path[0]:null;
+  }else{
+    dx/=d;dy/=d;enemy.x+=dx*enemy.speed;enemy.y+=dy*enemy.speed;
+    if(Math.abs(dx)>=Math.abs(dy)){enemy.fx=dx>0?1:-1;enemy.fy=0}else{enemy.fx=0;enemy.fy=dy>0?1:-1;}
+  }
+}
+function drawCircleCharacter(o,body,inner,glow){
+  const cx=o.x+o.size/2,cy=o.y+o.size/2,r=o.size/2;
+  ctx.strokeStyle=glow;ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,r+3,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle=body;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=inner;ctx.beginPath();ctx.arc(cx,cy,Math.max(4,r/2),0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#0f172a";
+  const ex=cx+o.fx*(r/3),ey=cy+o.fy*(r/3);
+  if(o.fx!==0){ctx.beginPath();ctx.arc(ex,cy-3,2,0,7);ctx.fill();ctx.beginPath();ctx.arc(ex,cy+3,2,0,7);ctx.fill();}
+  else{ctx.beginPath();ctx.arc(cx-3,ey,2,0,7);ctx.fill();ctx.beginPath();ctx.arc(cx+3,ey,2,0,7);ctx.fill();}
+}
+function draw(){
+  ctx.fillStyle="#0f172a";ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#18202f";ctx.fillRect(0,0,W,HEADER);
+  ctx.strokeStyle="#334155";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,HEADER);ctx.lineTo(W,HEADER);ctx.stroke();
+  ctx.fillStyle="#38bdf8";ctx.font="bold 26px 'Trebuchet MS',Arial";ctx.fillText("MAZE RUNNER",30,39);
+  ctx.fillStyle="#94a3b8";ctx.font="15px Arial";ctx.textAlign="right";ctx.fillText("Move: WASD / Arrow Keys   |   Restart: [R]",W-30,38);ctx.textAlign="left";
+
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const x=offsetX+c*CELL,y=offsetY+r*CELL;
+    if(grid[r][c]==="#"){
+      ctx.fillStyle="#334155";ctx.fillRect(x,y,CELL,CELL);
+      ctx.strokeStyle="#475569";ctx.strokeRect(x+1,y+1,CELL-2,CELL-2);
+    }else{
+      ctx.fillStyle="#111c2d";ctx.fillRect(x,y,CELL,CELL);
+    }
+  }
+  const ex=offsetX+exitPos[1]*CELL,ey=offsetY+exitPos[0]*CELL;
+  const pulse=(Math.sin(exitPulse*2)+1)/2;
+  ctx.fillStyle="#103228";ctx.fillRect(ex,ey,CELL,CELL);
+  ctx.strokeStyle="#34d399";ctx.lineWidth=2;ctx.beginPath();ctx.arc(ex+CELL/2,ey+CELL/2,CELL/2-2+pulse*3,0,7);ctx.stroke();
+  ctx.fillStyle="#10b981";ctx.beginPath();ctx.arc(ex+CELL/2,ey+CELL/2,CELL/3,0,7);ctx.fill();
+  ctx.fillStyle="#fff";ctx.font="bold 15px Arial";ctx.textAlign="center";ctx.fillText("E",ex+CELL/2,ey+CELL/2+5);ctx.textAlign="left";
+  ctx.strokeStyle="#4f46e5";ctx.lineWidth=2;ctx.strokeRect(offsetX,offsetY,cols*CELL,rows*CELL);
+
+  drawCircleCharacter(enemy,"#ef4444","#f87171","#dc2626");
+  drawCircleCharacter(player,"#38bdf8","#bae6fd","#0ea5e9");
+}
+function showModal(isWin){
+  won=isWin;over=!isWin;
+  document.getElementById("modal").style.display="flex";
+  const box=document.getElementById("modalBox");
+  box.className="box"+(isWin?"":" over");
+  document.getElementById("modalTitle").textContent=isWin?"YOU WIN!":"GAME OVER";
+  document.getElementById("modalText").textContent=isWin?
+    "You successfully navigated the maze to the exit!":
+    "The AI enemy caught you!";
+}
+function restart(){
+  player.reset();enemy.reset();won=false;over=false;
+  document.getElementById("modal").style.display="none";canvas.focus();
+}
+function tick(now){
+  const dt=Math.min(32,now-last);last=now;
+  if(!won&&!over){movePlayer();updateEnemy();
+    const pr={x:player.x,y:player.y,w:player.size,h:player.size};
+    const er={x:enemy.x,y:enemy.y,w:enemy.size,h:enemy.size};
+    if(rectsOverlap(pr,er))showModal(false);
+    const [r,c]=gridPos(player.x,player.y);
+    if(r===exitPos[0]&&c===exitPos[1])showModal(true);
+  }
+  exitPulse+=dt/1000;draw();requestAnimationFrame(tick);
+}
+restart();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
