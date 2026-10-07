@@ -1,7 +1,15 @@
 import math
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import pygame
 
-from bfs import bfs
+from ai.bfs import bfs
+from game.MazeRunner.maze import Maze
 
 
 class Enemy:
@@ -367,9 +375,6 @@ class Enemy:
 # ================================================================
 
 if __name__ == "__main__":
-
-    import pygame
-    from maze import Maze
 
     pygame.init()
 
