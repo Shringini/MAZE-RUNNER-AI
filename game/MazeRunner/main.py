@@ -14,14 +14,19 @@ import sys
 import os
 import pygame
 
-# Ensure local module directory is in sys.path for clean imports
+# Ensure local module directory and project root are in sys.path
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from maze import Maze
 from player import Player
-
+from ai.enemy import Enemy
 # -----------------------------------------------------------------------------
 # GAME CONFIGURATION & CONSTANTS
 # -----------------------------------------------------------------------------
@@ -88,6 +93,71 @@ def draw_victory_modal(surface, font_win, font_sub):
     surface.blit(hint_surf, hint_rect)
 
 
+
+def draw_game_over_modal(surface, font_over, font_sub):
+    """Draws the game-over dialog when the enemy catches the player."""
+    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((15, 23, 42, 185))
+    surface.blit(overlay, (0, 0))
+
+    box_w, box_h = 440, 220
+    box_x = (WINDOW_WIDTH - box_w) // 2
+    box_y = (WINDOW_HEIGHT - box_h) // 2
+    box_rect = pygame.Rect(box_x, box_y, box_w, box_h)
+
+    pygame.draw.rect(
+        surface,
+        (30, 41, 59),
+        box_rect,
+        border_radius=12
+    )
+
+    pygame.draw.rect(
+        surface,
+        (239, 68, 68),
+        box_rect,
+        width=3,
+        border_radius=12
+    )
+
+    game_over_title = font_over.render(
+        "GAME OVER",
+        True,
+        (239, 68, 68)
+    )
+
+    title_rect = game_over_title.get_rect(
+        center=(WINDOW_WIDTH // 2, box_y + 55)
+    )
+
+    surface.blit(game_over_title, title_rect)
+
+    desc_surf = font_sub.render(
+        "The AI enemy caught you!",
+        True,
+        TEXT_WHITE
+    )
+
+    desc_rect = desc_surf.get_rect(
+        center=(WINDOW_WIDTH // 2, box_y + 115)
+    )
+
+    surface.blit(desc_surf, desc_rect)
+
+    hint_surf = font_sub.render(
+        "Press [R] to Play Again   •   Press [ESC] to Quit",
+        True,
+        ACCENT_CYAN
+    )
+
+    hint_rect = hint_surf.get_rect(
+        center=(WINDOW_WIDTH // 2, box_y + 165)
+    )
+
+    surface.blit(hint_surf, hint_rect)
+
+
+
 def main():
     """Main game function."""
     pygame.init()
@@ -100,25 +170,29 @@ def main():
     font_title = pygame.font.SysFont("Trebuchet MS", 26, bold=True)
     font_sub = pygame.font.SysFont("Arial", 15)
     font_win = pygame.font.SysFont("Trebuchet MS", 38, bold=True)
+    font_over = pygame.font.SysFont("Trebuchet MS", 38, bold=True)
 
     # -------------------------------------------------------------------------
     # 1. INITIALIZE MAZE
     # -------------------------------------------------------------------------
-    # Maze dimensions: 15 rows x 19 cols
-    # Maze pixel size: 19 * 38 = 722px wide, 15 * 38 = 570px high
-    # Center maze within the window below the header (header is 65px)
     maze_cols = 19
     maze_rows = 15
+
     offset_x = (WINDOW_WIDTH - (maze_cols * TILE_SIZE)) // 2
     offset_y = 65 + ((WINDOW_HEIGHT - 65 - (maze_rows * TILE_SIZE)) // 2)
 
-    # Create maze (automatically generates a solvable 15x19 grid)
-    maze = Maze(grid=None, cell_size=TILE_SIZE, offset_x=offset_x, offset_y=offset_y)
+    maze = Maze(
+        grid=None,
+        cell_size=TILE_SIZE,
+        offset_x=offset_x,
+        offset_y=offset_y
+    )
 
     # -------------------------------------------------------------------------
-    # 2. INITIALIZE PLAYER (at starting cell 'P' from the maze)
+    # 2. INITIALIZE PLAYER
     # -------------------------------------------------------------------------
     start_row, start_col = maze.get_player_start()
+
     player = Player(
         start_row=start_row,
         start_col=start_col,
@@ -128,58 +202,121 @@ def main():
         speed=3.6
     )
 
-    # Game state variables
+    # -------------------------------------------------------------------------
+    # 3. INITIALIZE AI ENEMY
+    # -------------------------------------------------------------------------
+    enemy_start = maze.get_exit_pos()
+
+    enemy = Enemy(
+        maze=maze,
+        start_position=enemy_start,
+        cell_size=TILE_SIZE,
+        offset_x=offset_x,
+        offset_y=offset_y,
+        speed=2.0
+    )
+
+    # Game state
     game_won = False
+    game_over = False
     running = True
 
     # =========================================================================
     # MAIN GAME LOOP
     # =========================================================================
     while running:
+
+        # ---------------------------------------------------------------------
         # 1. EVENT HANDLING
+        # ---------------------------------------------------------------------
         for event in pygame.event.get():
+
             if event.type == pygame.QUIT:
                 running = False
+
             elif event.type == pygame.KEYDOWN:
+
                 if event.key == pygame.K_ESCAPE:
                     running = False
+
                 elif event.key == pygame.K_r:
-                    # Reset player back to starting position and reset win state
+                    # Restart player
                     player.reset_to_start()
+
+                    # Restart enemy
+                    enemy = Enemy(
+                        maze=maze,
+                        start_position=enemy_start,
+                        cell_size=TILE_SIZE,
+                        offset_x=offset_x,
+                        offset_y=offset_y,
+                        speed=2.0
+                    )
+
                     game_won = False
+                    game_over = False
 
+        # ---------------------------------------------------------------------
         # 2. GAME UPDATE LOGIC
-        if not game_won:
-            # Update player movement with wall collisions and boundary constraints
-            player.update(maze.wall_rects, maze.bounds_rect)
+        # ---------------------------------------------------------------------
+        if not game_won and not game_over:
 
-            # Check if player has reached the exit tile 'E'
-            if maze.check_exit_reached(player.rect):
+            # Update player movement and collision
+            player.update(
+                maze.wall_rects,
+                maze.bounds_rect
+            )
+
+            # Get player's current grid position
+            player_grid_pos = player.get_grid_position()
+
+            # Enemy follows player using BFS
+            enemy.update(player_grid_pos)
+
+            # Check if enemy catches player
+            if enemy.caught_player(player):
+                game_over = True
+
+            # Check if player reaches exit
+            elif maze.check_exit_reached(player.rect):
                 game_won = True
 
-            # -----------------------------------------------------------------
-            # NOTE FOR MEMBER 2 (AI ENEMY INTEGRATION):
-            # When implementing enemy AI with BFS:
-            # 1. Obtain player's grid position: player_grid_pos = player.get_grid_position()
-            # 2. Run your BFS algorithm using maze.get_neighbors(r, c) or maze.get_grid()
-            # 3. Update enemy movement along the computed shortest path!
-            # -----------------------------------------------------------------
-
+        # ---------------------------------------------------------------------
         # 3. RENDERING
+        # ---------------------------------------------------------------------
         screen.fill(BG_COLOR)
 
-        # Draw Header
-        draw_header(screen, font_title, font_sub)
+        # Header
+        draw_header(
+            screen,
+            font_title,
+            font_sub
+        )
 
-        # Draw Maze (Floor, Walls, Exit Portal)
+        # Maze
         maze.draw(screen)
 
-        # Draw Player
+        # Enemy
+        enemy.draw(screen)
+
+        # Player
         player.draw(screen)
 
-        # Draw Victory Screen if Win condition met
+        # Victory screen
         if game_won:
-            draw_victory_modal(screen, font_win, font_sub)
+            draw_victory_modal(
+                screen,
+                font_win,
+                font_sub
+            )
+
+        # Game-over screen
+        elif game_over:
+            draw_game_over_modal(
+                screen,
+                font_over,
+                font_sub
+            )
 
         # Refresh display
         pygame.display.flip()
@@ -191,3 +328,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
